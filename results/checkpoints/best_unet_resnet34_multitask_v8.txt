@@ -1,0 +1,16 @@
+Model: unet_resnet34_multitask
+Version: 1
+Training sets: ['trial_set_01', 'trial_set_02', 'trial_set_03', 'trial_set_04', 'L1_set_03', 'L2_set_02', 'L4_set_02']
+Image size: 512
+Batch size: 4
+Learning rate: 0.0001
+Number of epochs: 20
+Segmentation loss: BCEWithLogitsLoss
+Classification loss: CrossEntropyLoss with weights [1.1096066  1.5513121  0.9186953  0.42038602]
+Epoch: 4
+Train loss: 0.5634
+Train IoU: 0.8154
+Train risk acc: 0.8596
+Val loss: 0.5065
+Val IoU: 0.8314
+Val risk acc: 0.8647

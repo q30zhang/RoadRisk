@@ -15,12 +15,23 @@ from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
 from tqdm import tqdm
 
+from data_loader import load_from_dataset_folders, RoadRiskDataset
+from data_split import random_split_samples, stratified_random_split_samples, \
+    preset_set_split_samples, summarize_split
 
-VERSION = 2
+
+# ready_sets = ["trial_set_01", "trial_set_02", "trial_set_03", "trial_set_04"]
+ready_sets = ["trial_set_01", "trial_set_02", "trial_set_03", "trial_set_04",
+              "L1_set_03", "L2_set_02", "L4_set_02"]
+
+MODEL_VERSION = 1
 MODEL_NAMES = [
     "unet_resnet34_multitask",
-    "deeplab_v3_with_coordconv"]
+    "deeplab_v3_with_coordconv",
+    "unet_resnet34_with_coordconv",
+    ]
 
+VERSION = 1
 
 # -----------------------------
 # Config
@@ -28,10 +39,16 @@ MODEL_NAMES = [
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-DATA_PATH = os.path.join(ROOT, "data/seg_and_class_trial_1")
-LABEL_PATH = os.path.join(DATA_PATH, "labels_part1.json")
-IMAGE_DIR = os.path.join(ROOT, "data/seg_and_class_trial_1/img_part1")
-CHECKPOINT_PATH = os.path.join(ROOT, "results", "checkpoints", f"best_{MODEL_NAMES[VERSION-1]}.pth")
+DATA_PATH = os.path.join(ROOT, "data/raw")
+# LABEL_PATH = os.path.join(DATA_PATH, "labels_part1.json")
+# IMAGE_DIR = os.path.join(ROOT, "data/seg_and_class_trial_1/img_part1")
+
+n_versions = 1
+for checkpoint_path in os.listdir(os.path.join(ROOT, "results", "checkpoints")):
+    if checkpoint_path.startswith(f"best_{MODEL_NAMES[MODEL_VERSION-1]}") and checkpoint_path.endswith(".pth"):
+        n_versions += 1
+CHECKPOINT_PATH = os.path.join(ROOT, "results", "checkpoints", f"best_{MODEL_NAMES[MODEL_VERSION-1]}_v{n_versions}.pth")
+MODEL_INFO_PATH = os.path.join(ROOT, "results", "checkpoints", f"best_{MODEL_NAMES[MODEL_VERSION-1]}_v{n_versions}.txt")
 
 IMG_SIZE = 512
 BATCH_SIZE = 4
@@ -46,59 +63,59 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # Utilities
 # -----------------------------
 
-def polygon_to_mask(segmentation, height, width):
-    """
-    Convert COCO-style polygon segmentation to binary mask.
+# def polygon_to_mask(segmentation, height, width):
+#     """
+#     Convert COCO-style polygon segmentation to binary mask.
 
-    segmentation example:
-    [
-      [x1, y1, x2, y2, x3, y3, ...]
-    ]
-    """
-    mask = np.zeros((height, width), dtype=np.uint8)
+#     segmentation example:
+#     [
+#       [x1, y1, x2, y2, x3, y3, ...]
+#     ]
+#     """
+#     mask = np.zeros((height, width), dtype=np.uint8)
 
-    for poly in segmentation:
-        pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
-        pts = np.round(pts).astype(np.int32)
-        cv2.fillPoly(mask, [pts], color=1)
+#     for poly in segmentation:
+#         pts = np.array(poly, dtype=np.float32).reshape(-1, 2)
+#         pts = np.round(pts).astype(np.int32)
+#         cv2.fillPoly(mask, [pts], color=1)
 
-    return mask
+#     return mask
 
 
-def load_coco_like_annotations(json_path):
-    with open(json_path, "r") as f:
-        data = json.load(f)
+# def load_coco_like_annotations(json_path):
+#     with open(json_path, "r") as f:
+#         data = json.load(f)
 
-    images = {img["id"]: img for img in data["images"]}
-    annotations = data["annotations"]
+#     images = {img["id"]: img for img in data["images"]}
+#     annotations = data["annotations"]
 
-    samples = []
+#     samples = []
 
-    for ann in annotations:
-        image_id = ann["image_id"]
-        img_info = images[image_id]
+#     for ann in annotations:
+#         image_id = ann["image_id"]
+#         img_info = images[image_id]
 
-        file_name = img_info["file_name"]
-        height = img_info["height"]
-        width = img_info["width"]
+#         file_name = img_info["file_name"]
+#         height = img_info["height"]
+#         width = img_info["width"]
 
-        risk_level = int(float(ann["attributes"]["risk_level"]))
+#         risk_level = int(float(ann["attributes"]["risk_level"]))
 
-        # Convert risk labels 1,2,3,4 to class indices 0,1,2,3
-        risk_class = risk_level - 1
+#         # Convert risk labels 1,2,3,4 to class indices 0,1,2,3
+#         risk_class = risk_level - 1
 
-        samples.append(
-            {
-                "file_name": file_name,
-                "height": height,
-                "width": width,
-                "segmentation": ann["segmentation"],
-                "risk_class": risk_class,
-                "risk_level": risk_level,
-            }
-        )
+#         samples.append(
+#             {
+#                 "file_name": file_name,
+#                 "height": height,
+#                 "width": width,
+#                 "segmentation": ann["segmentation"],
+#                 "risk_class": risk_class,
+#                 "risk_level": risk_level,
+#             }
+#         )
 
-    return samples
+#     return samples
 
 
 class FocalLoss(nn.Module):
@@ -118,45 +135,45 @@ class FocalLoss(nn.Module):
 # Dataset
 # -----------------------------
 
-class RoadRiskDataset(Dataset):
-    def __init__(self, samples, image_dir, transform=None):
-        self.samples = samples
-        self.image_dir = image_dir
-        self.transform = transform
+# class RoadRiskDataset(Dataset):
+#     def __init__(self, samples, image_dir, transform=None):
+#         self.samples = samples
+#         self.image_dir = image_dir
+#         self.transform = transform
 
-    def __len__(self):
-        return len(self.samples)
+#     def __len__(self):
+#         return len(self.samples)
 
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
+#     def __getitem__(self, idx):
+#         sample = self.samples[idx]
 
-        image_path = os.path.join(self.image_dir, sample["file_name"])
+#         image_path = os.path.join(self.image_dir, sample["file_name"])
 
-        image = cv2.imread(image_path)
-        if image is None:
-            raise FileNotFoundError(f"Could not read image: {image_path}")
+#         image = cv2.imread(image_path)
+#         if image is None:
+#             raise FileNotFoundError(f"Could not read image: {image_path}")
 
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        mask = polygon_to_mask(
-            sample["segmentation"],
-            sample["height"],
-            sample["width"],
-        )
+#         mask = polygon_to_mask(
+#             sample["segmentation"],
+#             sample["height"],
+#             sample["width"],
+#         )
 
-        risk_class = sample["risk_class"]
+#         risk_class = sample["risk_class"]
 
-        if self.transform is not None:
-            transformed = self.transform(image=image, mask=mask)
-            image = transformed["image"]
-            mask = transformed["mask"]
+#         if self.transform is not None:
+#             transformed = self.transform(image=image, mask=mask)
+#             image = transformed["image"]
+#             mask = transformed["mask"]
 
-        # Albumentations returns mask as H x W. Make it 1 x H x W.
-        mask = mask.float().unsqueeze(0)
+#         # Albumentations returns mask as H x W. Make it 1 x H x W.
+#         mask = mask.float().unsqueeze(0)
 
-        risk_class = torch.tensor(risk_class, dtype=torch.long)
+#         risk_class = torch.tensor(risk_class, dtype=torch.long)
 
-        return image, mask, risk_class
+#         return image, mask, risk_class
 
 
 # -----------------------------
@@ -229,14 +246,18 @@ class AddCoords(nn.Module):
         return torch.cat([x, x_coords, y_coords], dim=1)
 
 
-class DeepLabV3ResNet34ROIAware(nn.Module):
-    def __init__(self, num_risk_classes=4):
+class CoordConv2dModel(nn.Module):
+    """
+    A simple CoordConv model for segmentation and classification.
+    This is a placeholder for the actual model implementations below.
+    """
+    def __init__(self, num_risk_classes=4, Model=smp.Unet):
         super().__init__()
         
         self.coord_adder = AddCoords()
         
         # Note: in_channels is now 5 (RGB + X + Y)
-        self.seg_model = smp.DeepLabV3Plus(
+        self.seg_model = Model(
             encoder_name="resnet34",
             encoder_weights=None, # Cannot use strict imagenet weights with 5 channels
             in_channels=5,
@@ -304,6 +325,16 @@ class DeepLabV3ResNet34ROIAware(nn.Module):
         risk_logits = self.classifier(cls_vec)
         
         return seg_logits, risk_logits
+
+
+class DeepLabV3ResNet34ROIAware(CoordConv2dModel):
+    def __init__(self, num_risk_classes=4):
+        super().__init__(num_risk_classes=num_risk_classes, Model=smp.DeepLabV3Plus)
+
+
+class UNetResNet34withCoordConv(CoordConv2dModel):
+    def __init__(self, num_risk_classes=4):
+        super().__init__(num_risk_classes=num_risk_classes, Model=smp.Unet)
 
 
 # -----------------------------
@@ -421,13 +452,13 @@ def validate(model, loader, seg_bce_loss, cls_loss_fn, lambda_cls=1.0):
 # -----------------------------
 
 def main():
-    samples = load_coco_like_annotations(LABEL_PATH)
+    # samples = load_coco_like_annotations(LABEL_PATH)
 
-    print(f"Loaded {len(samples)} samples")
+    # print(f"Loaded {len(samples)} samples")
 
-    risk_counts = Counter([s["risk_class"] for s in samples])
-    print("Risk class counts, zero-based:", risk_counts)
-    print("Risk level counts, original 1-4:", Counter([s["risk_level"] for s in samples]))
+    # risk_counts = Counter([s["risk_class"] for s in samples])
+    # print("Risk class counts, zero-based:", risk_counts)
+    # print("Risk level counts, original 1-4:", Counter([s["risk_level"] for s in samples]))
 
     if VERSION == 1:
         train_transform = A.Compose(
@@ -471,20 +502,49 @@ def main():
         ]
     )
 
-    # Simple random split.
-    # For a small dataset, you may later want stratified split by risk level.
-    n_total = len(samples)
-    n_train = int(0.8 * n_total)
-    n_val = n_total - n_train
+    samples = load_from_dataset_folders(DATA_PATH, included_sets=ready_sets)
 
-    generator = torch.Generator().manual_seed(42)
-    train_subset, val_subset = random_split(samples, [n_train, n_val], generator=generator)
+    # train_sets = []
+    # val_sets = []
+    # test_sets = []
 
-    train_samples = list(train_subset)
-    val_samples = list(val_subset)
+    # train_samples, val_samples, test_samples, unused_samples = preset_set_split_samples(
+    #     samples,
+    #     train_sets=train_sets,
+    #     val_sets=val_sets,
+    #     test_sets=test_sets,
+    # )
 
-    train_dataset = RoadRiskDataset(train_samples, IMAGE_DIR, transform=train_transform)
-    val_dataset = RoadRiskDataset(val_samples, IMAGE_DIR, transform=val_transform)
+    train_samples, val_samples, test_samples = stratified_random_split_samples(
+        samples,
+        train_ratio=0.8,
+        val_ratio=0.2,
+        test_ratio=0.0,
+        seed=42,
+    )
+
+    summarize_split("Train", train_samples)
+    summarize_split("Validation", val_samples)
+    summarize_split("Test", test_samples)
+
+    train_dataset = RoadRiskDataset(train_samples, transform=train_transform)
+    val_dataset = RoadRiskDataset(val_samples, transform=val_transform)
+    test_dataset = RoadRiskDataset(test_samples, transform=val_transform)
+
+    # # Simple random split.
+    # # For a small dataset, you may later want stratified split by risk level.
+    # n_total = len(samples)
+    # n_train = int(0.8 * n_total)
+    # n_val = n_total - n_train
+
+    # generator = torch.Generator().manual_seed(42)
+    # train_subset, val_subset = random_split(samples, [n_train, n_val], generator=generator)
+
+    # train_samples = list(train_subset)
+    # val_samples = list(val_subset)
+
+    # train_dataset = RoadRiskDataset(train_samples, IMAGE_DIR, transform=train_transform)
+    # val_dataset = RoadRiskDataset(val_samples, IMAGE_DIR, transform=val_transform)
 
     train_loader = DataLoader(
         train_dataset,
@@ -502,10 +562,12 @@ def main():
         pin_memory=True,
     )
 
-    if VERSION == 1:
+    if MODEL_VERSION == 1:
         model = UNetResNet34MultiTask(num_risk_classes=NUM_RISK_CLASSES).to(DEVICE)
-    elif VERSION == 2:
+    elif MODEL_VERSION == 2:
         model = DeepLabV3ResNet34ROIAware().to(DEVICE)
+    elif MODEL_VERSION == 3:
+        model = UNetResNet34withCoordConv(num_risk_classes=NUM_RISK_CLASSES).to(DEVICE)
 
     # Segmentation loss.
     seg_bce_loss = nn.BCEWithLogitsLoss()
@@ -575,6 +637,25 @@ def main():
                 },
                 CHECKPOINT_PATH,
             )
+            with open(MODEL_INFO_PATH, "w") as f:
+                f.write(
+                    f"Model: {MODEL_NAMES[MODEL_VERSION-1]}\n"
+                    f"Version: {VERSION}\n"
+                    f"Training sets: {ready_sets}\n"
+                    f"Image size: {IMG_SIZE}\n"
+                    f"Batch size: {BATCH_SIZE}\n"
+                    f"Learning rate: {LR}\n"
+                    f"Number of epochs: {NUM_EPOCHS}\n"
+                    f"Segmentation loss: {'FocalLoss' if VERSION==2 else 'BCEWithLogitsLoss'}\n"
+                    f"Classification loss: CrossEntropyLoss with weights {weights.detach().cpu().numpy()}\n"
+                    f"Epoch: {epoch}\n"
+                    f"Train loss: {train_metrics['loss']:.4f}\n"
+                    f"Train IoU: {train_metrics['iou']:.4f}\n"
+                    f"Train risk acc: {train_metrics['risk_acc']:.4f}\n"
+                    f"Val loss: {best_val_loss:.4f}\n"
+                    f"Val IoU: {val_metrics['iou']:.4f}\n"
+                    f"Val risk acc: {val_metrics['risk_acc']:.4f}\n"
+                )
             print("Saved best model")
 
 
